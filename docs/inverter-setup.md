@@ -620,6 +620,10 @@ You need to have a Solar Assistant installation <https://solar-assistant.io>
 
 Growatt has two popular series of inverters, SPA and SPH. Copy the template that matches your model from templates over the top of your `apps.yaml`, and edit inverter and battery settings as required. Yours may have different entity IDs on Home Assistant.
 
+Solar Assistant's time slot selects only offer 15-minute steps (plus 23:59), while Predbat plans in 5-minute steps. Predbat reads the options of each select and moves a time that isn't one of them onto the nearest option outside the window,
+so the start moves earlier and the end moves later. A slot that should be running now therefore starts at once, and Predbat ends the slot itself at the planned time.
+The same applies to any other inverter whose charge or export times are select entities.
+
 ## Hanchu iESS
 
 The Hanchu iESS has no native Predbat integration. Control is implemented via Predbat's generic Service API: Predbat calls four service hooks (`charge_start_service`, `charge_stop_service`, `discharge_start_service`, `discharge_stop_service`), all of which point at a single Home Assistant script that writes the corresponding time slots directly to the device via `hanchuess.device_control`.

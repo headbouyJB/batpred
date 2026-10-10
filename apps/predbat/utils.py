@@ -1891,6 +1891,38 @@ def time_string_to_stamp(time_string):
         return None
 
 
+def snap_time_to_options(time_string, options, snap_down):
+    """
+    Snap an HH:MM:SS time onto a time that a select entity will accept
+
+    options is the entity's option list, e.g. Solar Assistant offers 15 minute steps plus 23:59.
+    snap_down picks the latest option at or before the time, otherwise the earliest option at or
+    after it, wrapping around midnight when there is none. A time that is already an option, or an
+    option list that isn't made of times, leaves the time unchanged.
+    """
+    stamp = time_string_to_stamp(time_string)
+    if stamp is None or not isinstance(options, (list, tuple)):
+        return time_string
+
+    valid = set()
+    for option in options:
+        if isinstance(option, str) and re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", option):
+            parts = [int(part) for part in option.split(":")]
+            valid.add(parts[0] * 3600 + parts[1] * 60 + (parts[2] if len(parts) > 2 else 0))
+
+    target = stamp.hour * 3600 + stamp.minute * 60 + stamp.second
+    if len(valid) < 2 or target in valid:
+        return time_string
+
+    if snap_down:
+        candidates = [option for option in valid if option < target]
+        snapped = max(candidates) if candidates else max(valid)
+    else:
+        candidates = [option for option in valid if option > target]
+        snapped = min(candidates) if candidates else min(valid)
+    return "{:02d}:{:02d}:{:02d}".format(snapped // 3600, (snapped % 3600) // 60, snapped % 60)
+
+
 def compute_window_minutes(start_time, end_time, minutes_now):
     """
     Convert start/end times to minutes and adjust for midnight-spanning windows and past windows.

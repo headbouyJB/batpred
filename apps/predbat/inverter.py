@@ -46,7 +46,7 @@ from const import (
     EXPORT_LIMIT_DEFAULT_W,
 )
 from control_ledger import generation_from_state, OWNED, UNOWNED
-from utils import calc_percent_limit, compute_window_minutes, dp0, dp1, dp2, dp3, dp4, is_entity_id, time_string_to_stamp, minute_data, minute_data_state, window2minutes, pack_export_limit
+from utils import calc_percent_limit, compute_window_minutes, dp0, dp1, dp2, dp3, dp4, is_entity_id, time_string_to_stamp, snap_time_to_options, minute_data, minute_data_state, window2minutes, pack_export_limit
 
 TIME_FORMAT_HMS = "%H:%M:%S"
 
@@ -2927,6 +2927,27 @@ class Inverter:
                 self.write_and_poll_option("idle_end_time", idle_end_time_id, idle_end)
                 self.idle_end_minutes = idle_end_minutes
 
+    def snap_window_to_options(self, start_name, end_name, new_start, new_end):
+        """
+        Snap a window's start and end times onto what their select entities will accept
+
+        Some integrations only offer coarse times (Solar Assistant has 15 minute steps), and a time
+        that isn't one of the options is rejected by Home Assistant on every retry. The window is
+        snapped outwards, start earlier and end later, so a window that should be running now still
+        starts at once - Predbat ends a window itself, but it has no way to start one early. An
+        empty window (start equal to end) stays empty.
+        """
+        snapped = []
+        for name, value, snap_down in ((start_name, new_start, True), (end_name, new_end, new_start == new_end)):
+            entity_id = self.base.get_arg(name, indirect=False, index=self.id) if (value and name in self.base.args) else None
+            if isinstance(entity_id, str) and entity_id.split(".")[0] in ["select", "input_select"]:
+                snapped_value = snap_time_to_options(value, self.base.get_state_wrapper(entity_id, attribute="options"), snap_down)
+                if snapped_value != value:
+                    self.base.log("Inverter {} {} of {} is not an option of {}, using {}".format(self.id, name, value, entity_id, snapped_value))
+                    value = snapped_value
+            snapped.append(value)
+        return snapped[0], snapped[1]
+
     def adjust_force_export(self, force_export, new_start_time=None, new_end_time=None):
         """
         Adjust force export on/off and set the time window correctly
@@ -2986,6 +3007,9 @@ class Inverter:
             new_end = new_end_time.strftime(TIME_FORMAT_HMS)
         else:
             new_end = None
+
+        # A select entity only takes the times it lists
+        new_start, new_end = self.snap_window_to_options("discharge_start_time", "discharge_end_time", new_start, new_end)
 
         # If the inverter doesn't have a discharge enable time then use midnight-midnight as an alternative disable
         # GE Mode is a special case of timed discharge which we control at the time of export
@@ -3543,6 +3567,9 @@ class Inverter:
         # Convert to string
         new_start = charge_start_time.strftime(TIME_FORMAT_HMS)
         new_end = charge_end_time.strftime(TIME_FORMAT_HMS)
+
+        # A select entity only takes the times it lists
+        new_start, new_end = self.snap_window_to_options("charge_start_time", "charge_end_time", new_start, new_end)
 
         # Disable scheduled charge during change of window to avoid a blip in charging if not required
         have_disabled = False
